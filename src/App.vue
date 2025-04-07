@@ -8,8 +8,8 @@
       </div>
       <!-- 简化的顶部导航 -->
       <el-menu mode="horizontal" :ellipsis="false">
-        <el-menu-item index="1">对弈</el-menu-item>
-        <el-menu-item index="2">研究</el-menu-item>
+        <el-menu-item index="1">0</el-menu-item>
+        <el-menu-item index="2">1</el-menu-item>
       </el-menu>
     </el-header>
     <el-container>
@@ -26,11 +26,11 @@
           </el-menu-item>
           <el-menu-item index="2">
             <el-icon><i class="el-icon-s-data"></i></el-icon>
-            <span>研究</span>
+            <span>记谱</span>
           </el-menu-item>
           <el-menu-item index="3">
             <el-icon><i class="el-icon-video-camera"></i></el-icon>
-            <span>直播</span>
+            <span>商店</span>
           </el-menu-item>
            <!--省略的其他选项-->
           <el-sub-menu index="4">
@@ -52,7 +52,7 @@
     </el-container>
     <el-footer>
       <!-- 底部版权信息 -->
-      © 2024 Web围棋
+      © 2025 雪糕围棋
     </el-footer>
   </el-container>
 </template>
