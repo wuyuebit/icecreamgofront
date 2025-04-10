@@ -142,38 +142,106 @@ const flatStones = computed(() => {
 
 // --- 事件处理 (更简单：仅计算并触发事件) ---
 function handleBoardClick(event) {
-    if (gridSize.value <= 0) return; // 如果未调整大小，则不处理点击
-
+  if (gridSize.value <= 0) {
+        console.error("GoBoard handleBoardClick: Prevented click due to invalid gridSize."); // GoBoard handleBoardClick: 因 gridSize 无效阻止了点击。
+        return;
+    }
     const coords = getBoardCoordinatesFromEvent(event);
-    if (!coords) return;
 
-    // 触发坐标事件，GameView 处理验证/更新
-    emit('place-stone', { row: coords.row, col: coords.col });
+    // 严格检查：确保 coords 不为 null 且包含有效的数字
+    if (coords && typeof coords.row === 'number' && typeof coords.col === 'number' && !isNaN(coords.row) && !isNaN(coords.col)) {
+        console.log(`GoBoard handleBoardClick: Emitting place-stone with valid coords:`, coords); // GoBoard handleBoardClick: 正在使用有效坐标发出 place-stone 事件：...
+        emit('place-stone', { row: coords.row, col: coords.col });
+    } else {
+        console.warn("GoBoard handleBoardClick: getBoardCoordinatesFromEvent returned invalid coords or null. Not emitting place-stone. Coords:", coords); // GoBoard handleBoardClick: getBoardCoordinatesFromEvent 返回了无效坐标或 null。不发出 place-stone 事件。Coords: ...
+    }
 }
 
 function getBoardCoordinatesFromEvent(event) {
-    if (!event.currentTarget) return null;
-    const svgRect = event.currentTarget.getBoundingClientRect();
-    if (svgRect.width === 0 || svgRect.height === 0) return null; // 防止除以零
+    
 
-    const scaleX = svgWidth.value / svgRect.width; // 计算缩放差异
-    const scaleY = svgHeight.value / svgRect.height;
+  const functionName = "getBoardCoordinatesFromEvent"; // 便于日志记录
 
-    const clickX = (event.clientX - svgRect.left) * scaleX; // 按比例调整点击
-    const clickY = (event.clientY - svgRect.top) * scaleY;
+  if (!event.currentTarget) {
+      console.warn(`[${functionName}] event.currentTarget is null.`); // [getBoardCoordinatesFromEvent] event.currentTarget 为 null。
+      return null;
+  }
+  // 在这里直接检查 props，因为它们决定了 SVG 大小
+  if (props.containerWidth <= 0 || props.containerHeight <= 0) {
+      console.warn(`[${functionName}] Received container dimensions invalid: W=${props.containerWidth}, H=${props.containerHeight}`); // [getBoardCoordinatesFromEvent] 接收到的容器尺寸无效：W=..., H=...
+      return null;
+  }
+  // 检查基于 props 的计算值
+  if (svgWidth.value <= 0 || svgHeight.value <= 0) {
+      console.warn(`[${functionName}] Computed SVG dimensions invalid: W=${svgWidth.value}, H=${svgHeight.value}`); // [getBoardCoordinatesFromEvent] 计算出的 SVG 尺寸无效：W=..., H=...
+      return null;
+  }
+  if (gridSize.value <= 0) {
+      console.warn(`[${functionName}] Computed gridSize invalid: ${gridSize.value}`); // [getBoardCoordinatesFromEvent] 计算出的 gridSize 无效: ...
+      return null;
+  }
 
-    if (gridSize.value <= 0) return null;
 
-    const colRaw = (clickX - padding.value) / gridSize.value;
-    const rowRaw = (clickY - padding.value) / gridSize.value;
-    const col = Math.round(colRaw);
-    const row = Math.round(rowRaw);
+  const svgRect = event.currentTarget.getBoundingClientRect();
+  if (svgRect.width === 0 || svgRect.height === 0) {
+      console.warn(`[${functionName}] SVG BoundingRect has zero dimensions.`); // [getBoardCoordinatesFromEvent] SVG BoundingRect 尺寸为零。
+      return null;
+  }
 
-    const threshold = 0.45;
-     if (Math.abs(colRaw - col) > threshold || Math.abs(rowRaw - row) > threshold) return null;
-     if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) return null;
+  // 即使检查过了，也要防止万一 rect 为零时出现除以零的情况
+  if (svgRect.width === 0 || svgRect.height === 0) return null;
+  const scaleX = svgWidth.value / svgRect.width;
+  const scaleY = svgHeight.value / svgRect.height;
 
-    return { row, col };
+  // 确保缩放因子是有效的数字
+  if (isNaN(scaleX) || isNaN(scaleY) || !isFinite(scaleX) || !isFinite(scaleY)) {
+      console.warn(`[${functionName}] Invalid scale factors: scaleX=${scaleX}, scaleY=${scaleY}`); // [getBoardCoordinatesFromEvent] 无效的缩放因子：scaleX=..., scaleY=...
+      return null;
+  }
+
+
+  const clickX = (event.clientX - svgRect.left) * scaleX;
+  const clickY = (event.clientY - svgRect.top) * scaleY;
+
+  const colRaw = (clickX - padding.value) / gridSize.value;
+  const rowRaw = (clickY - padding.value) / gridSize.value;
+
+  // 检查原始计算值是否为有效数字
+  if (isNaN(colRaw) || isNaN(rowRaw) || !isFinite(colRaw) || !isFinite(rowRaw)) {
+      console.warn(`[${functionName}] Invalid raw coordinates: rowRaw=${rowRaw}, colRaw=${colRaw}`); // [getBoardCoordinatesFromEvent] 无效的原始坐标：rowRaw=..., colRaw=...
+      return null;
+  }
+
+
+  const col = Math.round(colRaw);
+  const row = Math.round(rowRaw);
+
+  // 检查四舍五入后是否为有效数字
+  if (isNaN(col) || isNaN(row)) {
+      console.warn(`[${functionName}] Invalid rounded coordinates: row=${row}, col=${col}`); // [getBoardCoordinatesFromEvent] 无效的四舍五入坐标：row=..., col=...
+      return null;
+  }
+
+
+  const threshold = 0.45; // 阈值
+  if (Math.abs(colRaw - col) > threshold || Math.abs(rowRaw - row) > threshold) {
+      // console.log(`[${functionName}] Click too far from intersection.`); // 可选日志：[getBoardCoordinatesFromEvent] 点击离交叉点太远。
+      return null;
+  }
+  if (row < 0 || row >= boardSize || col < 0 || col >= boardSize) {
+        // console.log(`[${functionName}] Click out of bounds.`); // 可选日志：[getBoardCoordinatesFromEvent] 点击超出边界。
+      return null;
+  }
+
+  // --- 返回前的最终检查 ---
+  if (typeof row !== 'number' || typeof col !== 'number' || isNaN(row) || isNaN(col)) {
+      console.error(`[${functionName}] FINAL CHECK FAILED: row or col is invalid! row=${row}, col=${col}. Returning null.`); // [getBoardCoordinatesFromEvent] 最终检查失败：row 或 col 无效！row=..., col=...。正在返回 null。
+      return null;
+  }
+
+  // 如果所有检查都通过，记录有效坐标并返回
+  console.log(`[${functionName}] Returning valid coords: { row: ${row}, col: ${col} }`); // [getBoardCoordinatesFromEvent] 返回有效坐标：{ row: ..., col: ... }
+  return { row, col };
 }
 
 // --- 悬停逻辑 ---

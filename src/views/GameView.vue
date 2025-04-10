@@ -92,6 +92,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { ElRow, ElCol, ElCard, ElAvatar, ElButton, ElMessage } from 'element-plus';
 import GoBoard from '../components/GoBoard.vue';
 import { ZoomIn, Cpu, Share, RefreshLeft, Finished, Delete, ArrowRightBold } from '@element-plus/icons-vue';
+import { calculateBoardStateAfterMove } from '../utils/goLogic.js';
 
 // Game state refs remain the same
 const board = ref(Array(19).fill(null).map(() => Array(19).fill(0)));
@@ -107,13 +108,36 @@ const boardContainerHeight = ref(0);
 let resizeObserver = null;
 
 // Computed properties remain the same
+// --- 计算属性 ---
 const moveCount = computed(() => moveHistory.value.length);
-const lastMoveCoords = computed(() => {
-    if (moveHistory.value.length === 0) return null;
-    const { row, col } = moveHistory.value[moveHistory.value.length - 1];
-    return { row, col };
-});
 
+// --- 修正后的计算属性 ---
+const lastMoveCoords = computed(() => {
+  if (moveHistory.value.length === 0) {
+    return null;
+  }
+  // 使用正确的属性名 'row' 和 'col' 进行解构
+  const moveData = moveHistory.value[moveHistory.value.length - 1];
+
+  // 确保 moveData 存在且包含 row 和 col
+  if (!moveData || typeof moveData.row === 'undefined' || typeof moveData.col === 'undefined') {
+      console.error("Invalid data found in moveHistory for last move:", moveData); // 在手数历史中发现无效的最后一步棋数据：...
+      return null; // 如果数据无效则返回 null
+  }
+
+  const { row, col } = moveData;
+
+
+  // 在返回前确保 row 和 col 是有效的数字
+  if (typeof row === 'number' && typeof col === 'number') {
+     console.log("GameView computed lastMoveCoords:", { row, col }); // 添加日志：GameView 计算出的 lastMoveCoords：...
+     return { row, col };
+  } else {
+     // 理论上，如果上面的检查通过了，这里不应该执行，但作为保险
+     console.error("Invalid types for row/col after destructuring:", moveData); // 解构后 row/col 类型无效：...
+     return null;
+  }
+});
 // Measurement logic remains the same
 const updateBoardContainerSize = () => {
   if (boardWrapperRef.value) {
@@ -153,20 +177,85 @@ onBeforeUnmount(() => {
 });
 
 // Methods (handleBoardClick, resetGame) remain the same
-function handleBoardClick({ row, col }) {
-  console.log(`GameView handling click for R${row}, C${col}`);
-  if (board.value[row]?.[col] !== 0) {
-    ElMessage.warning('此处已有棋子!');
+
+
+function handleBoardClick(payload) {
+  // 直接记录接收到的负载
+  console.log(`GameView received click payload:`, payload); // GameView 接收到点击负载：...
+
+  // 检查负载是否有效且具有预期的属性
+  if (!payload || typeof payload.row === 'undefined' || typeof payload.col === 'undefined') {
+      console.error("Invalid payload received in handleBoardClick:", payload); // handleBoardClick 中接收到无效负载：...
+      ElMessage.error('内部错误：无法获取落子坐标！');
+      return;
+  }
+
+  // 从负载对象中提取 row 和 col
+  const r = payload.row;
+  const c = payload.col;
+
+  console.log(`Extracted coords: R${r}, C${c}. Current Player: ${currentPlayer.value}`); // 提取出的坐标：R..., C...。当前玩家：...
+
+
+  // --- 开始调试日志 ---
+  try {
+    const valueAtClick = board.value[r]?.[c]; // 使用提取出的 r, c
+    console.log(`Value at board.value[${r}][${c}] BEFORE check:`, valueAtClick, typeof valueAtClick); // 检查前 board.value[...] 的值：...
+    if (moveHistory.value.length === 0) {
+        // ... (空棋盘检查保持不变) ...
+         let isEmpty = true;
+        for (let i = 0; i < 19; i++) {
+            for (let j = 0; j < 19; j++) {
+                if (board.value[i][j] !== 0) {
+                    isEmpty = false;
+                    console.error(`Board NOT empty at [${i}][${j}], value:`, board.value[i][j]); // 棋盘在 [...] 不为空，值：...
+                    break;
+                }
+            }
+            if (!isEmpty) break;
+        }
+        if (isEmpty) {
+            console.log("Confirmed: board.value IS empty before first move check."); // 确认：在第一次落子检查前 board.value 是空的。
+        }
+    }
+  } catch (e) {
+      console.error("Error during pre-check logging:", e); // 预检查日志记录期间出错：...
+  }
+  // --- 结束调试日志 ---
+
+
+  // 1. 使用逻辑模块计算潜在的下一个状态（使用提取出的 r, c）
+  const result = calculateBoardStateAfterMove(r, c, currentPlayer.value, board.value);
+
+  // 2. 检查有效性
+  if (!result.isValid) {
+    ElMessage.warning(result.error || '无效落子！');
+    console.log("Invalid move:", result.error); // 无效落子：...
     return;
   }
-  // --- TODO: Add validation ---
-  board.value[row][col] = currentPlayer.value;
-  moveHistory.value.push({ row, col, player: currentPlayer.value });
-  // --- TODO: Add captures ---
+
+  // 3. 更新棋盘状态
+  board.value = result.nextBoardState;
+
+  // 4. 更新手数历史
+  moveHistory.value.push({ r, c, player: currentPlayer.value }); // 使用提取出的 r, c
+
+  // 5. 更新提子数
+  if (result.capturedStones && result.capturedStones.length > 0) {
+     const count = result.capturedStones.length;
+    if (currentPlayer.value === 1) { blackCaptures.value += count; } else { whiteCaptures.value += count; }
+    ElMessage.success(`提子 ${count} !`);
+  }
+
+  // 6. 切换玩家
   currentPlayer.value = currentPlayer.value === 1 ? 2 : 1;
+
+  console.log("Move successful. Next player:", currentPlayer.value); // 落子成功。下一位玩家：...
 }
+
+
+
 function resetGame() {
-   // ... same ...
    board.value = Array(19).fill(null).map(() => Array(19).fill(0));
    moveHistory.value = [];
    currentPlayer.value = 1;
